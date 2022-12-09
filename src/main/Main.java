@@ -14,9 +14,9 @@ import issue.JiraAnalysis;
 
 public class Main {
 	public static void main(String[] args) {
-		
+
 		String cwd = "demo-project";
-		String project = "activemq";
+		String project = "cdt";
 
 		String projectConfigFile = cwd + File.separator + project + ".conf";
 		String repo = cwd + File.separator + project + "-repo";
@@ -39,20 +39,19 @@ public class Main {
 				dir.mkdir();
 
 			IssueAnalysis analysis = null;
-			
+
 			if (issueTracker.equals("bugzilla")) {
 				analysis = new BZAnalysis(repo, dir.getAbsolutePath(), issueDir);
-			} else if (issueTracker.equals("jira")){
+			} else if (issueTracker.equals("jira")) {
 				analysis = new JiraAnalysis(repo, dir.getAbsolutePath(), issueDir);
 			}
-			
+
 			analysis.run(configmap);
 
 		} catch (IOException e1) {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
-		
-		
+
 	}
 }

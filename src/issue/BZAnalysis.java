@@ -12,12 +12,16 @@ import utlis.GitUtil;
 import utlis.MyFileUtils;
 
 public class BZAnalysis extends IssueAnalysis {
+	
+	private HashMap<String, HashMap<String, Integer>> df;
+
 
 	public BZAnalysis(String repo, String cwd, String issueDir) {
 		this.repo = repo;
 		this.cwd = cwd;
 		this.issueDir = issueDir;
 		this.issueMap = new HashMap<>();
+		this.df = new HashMap<>();
 	}
 
 	private void getAllissues(String dir) throws IOException {
@@ -46,7 +50,7 @@ public class BZAnalysis extends IssueAnalysis {
 		}
 	}
 
-	private void analyse(String base, String head, String bugPattern) throws IOException {
+	private void analyse(String base, String head, String bugPattern, String project) throws IOException {
 
 		System.out.println("Issues: " + issueMap.size());
 
@@ -54,7 +58,8 @@ public class BZAnalysis extends IssueAnalysis {
 		System.out.println("Commits: " + commits.length);
 
 		StringBuilder stringBuilder = new StringBuilder();
-		stringBuilder.append("cycle\tcommit\tbugid\tadded\tdeleted\tfile\n");
+		// stringBuilder.append("cycle\tcommit\tbugid\tadded\tdeleted\tfile\n");
+		stringBuilder.append("Project,Revision(prev),Revision(cur),Commit,BugId,Added,Deleted,File, Total\n");
 
 		for (String commit : commits) {
 			String[] commitInfo = commit.split("\t");
@@ -63,6 +68,8 @@ public class BZAnalysis extends IssueAnalysis {
 			if (commitHash.equals("")) {
 				continue;
 			}
+			if (commitInfo.length < 3)
+				continue;
 			String commitMessage = commitInfo[3];
 
 			// System.out.println(commitHash + "\t" + commitMessage);
@@ -78,12 +85,48 @@ public class BZAnalysis extends IssueAnalysis {
 					Issue issue = issueMap.get(bugId);
 					if (!issue.type.equals("enhancement") && issue.status.equals("RESOLVED")
 							&& issue.resolution.equals("FIXED")) {
-						System.out.println(commitHash + "\t" + commitMessage + "\t" + bugId + "\t" + issue.status + "\t"
-								+ issue.resolution);
+//						System.out.println(commitHash + "\t" + commitMessage + "\t" + bugId + "\t" + issue.status + "\t"
+//								+ issue.resolution);
 						String[] changes = GitUtil.getChanges(commitHash, repo);
 						for (String change : changes) {
-							stringBuilder.append(base + "-" + head + "\t" + commitHash + "\t" + bugId + "\t" + change);
+							
+							if(change.split("\t").length < 3) continue;
+							
+							String added = change.split("\t")[0];
+							String deleted = change.split("\t")[1];
+							String file = change.split("\t")[2];
+							
+							int total = 0;
+							
+							try {
+								total = Integer.parseInt(added) + Integer.parseInt(deleted);				
+							} catch (NumberFormatException e) {
+								// TODO: handle exception
+								System.err.println(e);
+								System.err.println("Ignoring the following change:");
+								System.err.println(change);
+								continue;
+							}
+							
+							stringBuilder.append(project + ',' +base + ',' + head + ',' + commitHash + ',' + bugId + ',' + change.replace('\t', ',') + "," + total);
 							stringBuilder.append(System.lineSeparator());
+							
+							if (df.containsKey(file)) {
+								HashMap<String, Integer> tempMap = df.get(file);
+								if(tempMap.containsKey(head)) {
+									tempMap.put(head, tempMap.get(head)+total);
+								}
+								else {
+									tempMap.put(head, total);
+								}
+								
+								df.put(file, tempMap);
+							} else {
+								HashMap<String, Integer> tempMap = new HashMap<>();
+								tempMap.put(head, total);
+								df.put(file, tempMap);
+							}
+							
 						}
 
 					}
@@ -92,8 +135,10 @@ public class BZAnalysis extends IssueAnalysis {
 			}
 
 		}
-		MyFileUtils.writeToFile(new File(cwd + File.separator + "fixing-changes-" + base  + "--" + head + ".csv"),
+		
+		MyFileUtils.writeToFile(new File(cwd + File.separator + "fixing-changes-" + base.replace('/', '-')  + "--" + head.replace('/', '-')  + ".csv"),
 				stringBuilder.toString());
+		
 
 	}
 
@@ -103,6 +148,7 @@ public class BZAnalysis extends IssueAnalysis {
 		@SuppressWarnings("unchecked")
 		ArrayList<String> revisions = (ArrayList<String>) configmap.get("revisions");
 		String bugPattern = (String) configmap.get("bugpattern");
+		String project = (String) configmap.get("project");
 		try {
 			getAllissues(issueDir);
 			
@@ -111,8 +157,45 @@ public class BZAnalysis extends IssueAnalysis {
 				String head = (String) revisions.get(i+1);
 //				String bugPattern = "Bug.\\d+";
 				System.out.println("Analysing " + base + ".." + head);
-				analyse(base, head, bugPattern);
+				analyse(base, head, bugPattern, project);
 			}
+			
+			StringBuilder stringBuilder = new StringBuilder();
+			stringBuilder.append("Class");
+			
+			for (int i = 1; i < revisions.size(); i++) {
+				stringBuilder.append(",");
+				stringBuilder.append(revisions.get(i));
+			}
+			
+			stringBuilder.append(System.lineSeparator());
+			
+			for (Map.Entry<String, HashMap<String, Integer>> mapElement : df.entrySet()) {
+				
+				String file = mapElement.getKey();
+				
+				stringBuilder.append(file);
+				
+				HashMap<String, Integer> tempMap = mapElement.getValue();
+				
+				for (int i = 1; i < revisions.size(); i++) {
+					String string = revisions.get(i);
+					if (tempMap.containsKey(string)) {
+						stringBuilder.append(",");
+						stringBuilder.append(tempMap.get(string));
+						
+					} else {
+						stringBuilder.append(",");
+						stringBuilder.append(0);
+					}
+				}
+				
+				stringBuilder.append(System.lineSeparator());
+				
+			}
+			
+			MyFileUtils.writeToFile(new File(cwd + File.separator + project + "-fp" + ".csv"), stringBuilder.toString());
+		
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
